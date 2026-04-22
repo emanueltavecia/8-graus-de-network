@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>8 Graus de Network</title>
+<style>
+    body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background-color: #1e2522;
+        color: #f0f5f1;
+        margin: 0;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+    h1 {
+        color: #4ade80;
+        margin-bottom: 30px;
+    }
+    .container {
+        background-color: #2a342e;
+        padding: 30px;
+        border-radius: 10px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        width: 100%;
+        max-width: 600px;
+    }
+    .input-group {
+        display: flex;
+        flex-direction: column;
+        margin-bottom: 20px;
+        position: relative;
+    }
+    label {
+        margin-bottom: 8px;
+        font-weight: bold;
+    }
+    input {
+        padding: 12px;
+        border: 1px solid #4a5c52;
+        border-radius: 5px;
+        background-color: #1e2522;
+        color: #fff;
+        font-size: 16px;
+    }
+    input:focus {
+        outline: none;
+        border-color: #4ade80;
+    }
+    .autocomplete-list {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background-color: #1e2522;
+        border: 1px solid #4ade80;
+        border-top: none;
+        border-radius: 0 0 5px 5px;
+        max-height: 250px;
+        overflow-y: auto;
+        z-index: 1000;
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: none;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    }
+    .autocomplete-list.show {
+        display: block;
+    }
+    .autocomplete-item {
+        padding: 12px;
+        cursor: pointer;
+        border-bottom: 1px solid #2a342e;
+    }
+    .autocomplete-item:last-child {
+        border-bottom: none;
+    }
+    .autocomplete-item:hover {
+        background-color: #4ade80;
+        color: #1e2522;
+        font-weight: bold;
+    }
+    .buttons {
+        display: flex;
+        gap: 15px;
+        margin-top: 20px;
+    }
+    button {
+        flex: 1;
+        padding: 12px;
+        background-color: #4ade80;
+        color: #1e2522;
+        border: none;
+        border-radius: 5px;
+        font-size: 16px;
+        font-weight: bold;
+        cursor: pointer;
+        transition: background-color 0.3s;
+    }
+    button:hover {
+        background-color: #22c55e;
+    }
+    button.secondary {
+        background-color: #4a5c52;
+        color: #fff;
+    }
+    button.secondary:hover {
+        background-color: #5c7265;
+    }
+    button:disabled {
+        background-color: #36423a;
+        color: #7a8c82;
+        cursor: not-allowed;
+    }
+    #results {
+        margin-top: 30px;
+        padding: 20px;
+        background-color: #1e2522;
+        border-radius: 5px;
+        min-height: 100px;
+    }
+    .path-item {
+        background-color: #2a342e;
+        padding: 15px;
+        margin-bottom: 10px;
+        border-left: 4px solid #4ade80;
+        border-radius: 4px;
+    }
+    .path-length {
+        font-weight: bold;
+        color: #4ade80;
+        margin-bottom: 10px;
+        display: block;
+    }
+    .error {
+        color: #ef4444;
+        font-weight: bold;
+    }
+    .loading {
+        color: #60a5fa;
+        font-weight: bold;
+        text-align: center;
+        margin-bottom: 20px;
+    }
+</style>
+</head>
+<body>
+
+<h1>8 Graus de Network</h1>
+
+<div class="container">
+    <div id="statusMessage" class="loading">Carregando dados do servidor...</div>
+
+    <div class="input-group">
+        <label for="actorOrigin">Ator de Origem</label>
+        <input type="text" id="actorOrigin" placeholder="Digite ou selecione o ator de origem..." autocomplete="off" disabled>
+        <ul id="listOrigin" class="autocomplete-list"></ul>
+    </div>
+
+    <div class="input-group">
+        <label for="actorDest">Ator de Destino</label>
+        <input type="text" id="actorDest" placeholder="Digite ou selecione o ator de destino..." autocomplete="off" disabled>
+        <ul id="listDest" class="autocomplete-list"></ul>
+    </div>
+
+    <div class="buttons">
+        <button id="btnBfs" onclick="executeBFS()" disabled>BFS (Caminho Mínimo)</button>
+        <button class="secondary" id="btnBfs8" onclick="executeBFS8()" disabled>BFS (Até 8 Graus)</button>
+    </div>
+
+    <div id="results">
+        Aguardando carregamento dos dados...
+    </div>
+</div>
+
+<script>
+const graph = new Map();
+const actorsSet = new Set();
+let sortedActorsList = [];
+
+function addEdge(v1, v2) {
+    if (!graph.has(v1)) graph.set(v1, []);
+    if (!graph.has(v2)) graph.set(v2, []);
+    
+    if (!graph.get(v1).includes(v2)) graph.get(v1).push(v2);
+    if (!graph.get(v2).includes(v1)) graph.get(v2).push(v1);
+}
+
+function seedGraph(data) {
+    data.forEach(movie => {
+        const movieTitle = movie.title;
+        if (movie.cast && Array.isArray(movie.cast)) {
+            movie.cast.forEach(actor => {
+                addEdge(movieTitle, actor);
+                actorsSet.add(actor);
+            });
+        }
+    });
+    sortedActorsList = Array.from(actorsSet).sort();
+}
+
+async function loadData() {
+    try {
+        const response = await fetch('./latest_movies.json');
+        if (!response.ok) throw new Error('Falha na rede ao tentar carregar o arquivo.');
+        
+        const data = await response.json();
+        seedGraph(data);
+        
+        setupAutocomplete('actorOrigin', 'listOrigin');
+        setupAutocomplete('actorDest', 'listDest');
+        
+        document.getElementById('statusMessage').style.display = 'none';
+        document.getElementById('actorOrigin').disabled = false;
+        document.getElementById('actorDest').disabled = false;
+        document.getElementById('btnBfs').disabled = false;
+        document.getElementById('btnBfs8').disabled = false;
+        renderResults('Dados carregados com sucesso. Selecione os atores e execute a busca.');
+        
+    } catch (error) {
+        document.getElementById('statusMessage').style.display = 'none';
+        renderResults(`<span class="error">Erro ao carregar latest_movies.json: ${error.message}. Você está rodando a aplicação em um servidor local?</span>`);
+    }
+}
+
+function setupAutocomplete(inputId, listId) {
+    const input = document.getElementById(inputId);
+    const list = document.getElementById(listId);
+
+    function renderList() {
+        const val = input.value.trim().toLowerCase();
+        list.innerHTML = '';
+        
+        const matches = val ? sortedActorsList.filter(actor => actor.toLowerCase().includes(val)) : sortedActorsList;
+        
+        if (matches.length > 0) {
+            const fragment = document.createDocumentFragment();
+            matches.forEach(match => {
+                const li = document.createElement('li');
+                li.className = 'autocomplete-item';
+                li.textContent = match;
+                li.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    input.value = match;
+                    list.innerHTML = '';
+                    list.classList.remove('show');
+                });
+                fragment.appendChild(li);
+            });
+            list.appendChild(fragment);
+            list.classList.add('show');
+        } else {
+            list.classList.remove('show');
+        }
+    }
+
+    input.addEventListener('input', renderList);
+    input.addEventListener('focus', renderList);
+}
+
+document.addEventListener('click', function(e) {
+    const lists = document.querySelectorAll('.autocomplete-list');
+    lists.forEach(list => {
+        const inputId = list.id === 'listOrigin' ? 'actorOrigin' : 'actorDest';
+        const input = document.getElementById(inputId);
+        if (e.target !== input && e.target !== list) {
+            list.classList.remove('show');
+        }
+    });
+});
+
+function getBFSShortestPath(start, end) {
+    if (!graph.has(start) || !graph.has(end)) return null;
+    if (start === end) return [start];
+
+    const queue = [[start]];
+    const visited = new Set();
+    visited.add(start);
+
+    while (queue.length > 0) {
+        const path = queue.shift();
+        const node = path[path.length - 1];
+
+        for (const neighbor of graph.get(node)) {
+            if (neighbor === end) {
+                return [...path, neighbor];
+            }
+            if (!visited.has(neighbor)) {
+                visited.add(neighbor);
+                queue.push([...path, neighbor]);
+            }
+        }
+    }
+    return null;
+}
+
+function getBFSMax8Paths(start, end) {
+    if (!graph.has(start) || !graph.has(end)) return [];
+    if (start === end) return [[start]];
+
+    const queue = [[start]];
+    const validPaths = [];
+    let minPathLength = 8;
+    const distances = new Map();
+    distances.set(start, 0);
+
+    while (queue.length > 0) {
+        const path = queue.shift();
+        const node = path[path.length - 1];
+        const currentDist = path.length - 1;
+
+        if (currentDist >= minPathLength) continue;
+
+        for (const neighbor of graph.get(node)) {
+            const nextDist = currentDist + 1;
+
+            if (neighbor === end) {
+                if (nextDist < minPathLength) {
+                    minPathLength = nextDist;
+                    validPaths.length = 0;
+                    validPaths.push([...path, neighbor]);
+                } else if (nextDist === minPathLength) {
+                    validPaths.push([...path, neighbor]);
+                }
+            } else {
+                if (!distances.has(neighbor) || distances.get(neighbor) >= nextDist) {
+                    distances.set(neighbor, nextDist);
+                    queue.push([...path, neighbor]);
+                }
+            }
+        }
+    }
+    return validPaths;
+}
+
+function formatPathHTML(path) {
+    const lengthEdges = path.length - 1;
+    const degrees = lengthEdges / 2;
+    const pathString = path.join(' ➔ ');
+    
+    return `
+        <div class="path-item">
+            <span class="path-length">Comprimento: ${lengthEdges} arestas (${degrees} graus de separação)</span>
+            <div>${pathString}</div>
+        </div>
+    `;
+}
+
+function renderResults(htmlContent) {
+    document.getElementById('results').innerHTML = htmlContent;
+}
+
+function executeBFS() {
+    const origin = document.getElementById('actorOrigin').value.trim();
+    const dest = document.getElementById('actorDest').value.trim();
+
+    if (!origin || !dest) {
+        renderResults('<span class="error">Por favor, selecione dois atores válidos.</span>');
+        return;
+    }
+
+    const path = getBFSShortestPath(origin, dest);
+
+    if (path) {
+        renderResults(formatPathHTML(path));
+    } else {
+        renderResults('<span class="error">Relacionamento inexistente entre os atores selecionados.</span>');
+    }
+}
+
+function executeBFS8() {
+    const origin = document.getElementById('actorOrigin').value.trim();
+    const dest = document.getElementById('actorDest').value.trim();
+
+    if (!origin || !dest) {
+        renderResults('<span class="error">Por favor, selecione dois atores válidos.</span>');
+        return;
+    }
+
+    const paths = getBFSMax8Paths(origin, dest);
+
+    if (paths.length > 0) {
+        let html = `<h3>Caminhos encontrados (Máx 8 Arestas): ${paths.length}</h3>`;
+        paths.forEach(p => {
+            html += formatPathHTML(p);
+        });
+        renderResults(html);
+    } else {
+        renderResults('<span class="error">Relacionamento inexistente ou excede o limite de 8 arestas.</span>');
+    }
+}
+
+window.onload = loadData;
+</script>
+
+</body>
+</html>
