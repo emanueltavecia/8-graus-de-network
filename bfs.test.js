@@ -1,6 +1,6 @@
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
-const { addEdge, getBFSShortestPath, getBFSMax8Paths, MAX_EDGES, MAX_RESULTS } = require('./bfs.js');
+const { addEdge, getBFSShortestPath, getBFSMax8Paths, MAX_EDGES } = require('./bfs.js');
 
 // Helper to build a fresh graph for each test
 function makeGraph() {
@@ -219,10 +219,9 @@ describe('getBFSMax8Paths', () => {
         }
     });
 
-    test('cap is applied and does not throw for large result sets', () => {
-        // Create a graph where many paths exist by having many intermediary actors
+    test('returns all paths without any cap for large result sets', () => {
+        // Create a graph where many paths exist by having 30 intermediary actors
         const g = makeGraph();
-        // A shares movie with 10 actors; each of those shares a movie with B
         for (let i = 0; i < 30; i++) {
             addEdge(g, 'A', `M_A${i}`);
             addEdge(g, `X${i}`, `M_A${i}`);
@@ -230,7 +229,6 @@ describe('getBFSMax8Paths', () => {
             addEdge(g, 'B', `M_B${i}`);
         }
         const paths = getBFSMax8Paths(g, 'A', 'B');
-        assert.ok(paths.length <= MAX_RESULTS, `Should not exceed MAX_RESULTS (${MAX_RESULTS})`);
-        assert.ok(paths.length > 0, 'Should find at least some paths');
+        assert.equal(paths.length, 30, 'Should return all 30 paths with no cap');
     });
 });

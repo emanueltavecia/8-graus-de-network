@@ -312,11 +312,7 @@ function executeBFS8() {
     const paths = BFS.getBFSMax8Paths(graph, origin, dest);
 
     if (paths.length > 0) {
-        const capped = paths.length >= BFS.MAX_RESULTS;
-        let html = `<h3>Caminhos encontrados (Máx ${BFS.MAX_DEGREES} Graus): ${paths.length}${capped ? '+' : ''}</h3>`;
-        if (capped) {
-            html += `<p style="color:#fbbf24">Exibindo os primeiros ${BFS.MAX_RESULTS} caminhos encontrados.</p>`;
-        }
+        let html = `<h3>Caminhos encontrados (Máx ${BFS.MAX_DEGREES} Graus): ${paths.length}</h3>`;
         paths.forEach(p => {
             html += formatPathHTML(p);
         });

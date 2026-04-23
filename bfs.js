@@ -8,7 +8,6 @@
 
     var MAX_DEGREES = 8;
     var MAX_EDGES = MAX_DEGREES * 2; // 16 edges = 8 degrees (actor→movie→actor)
-    var MAX_RESULTS = 200;
 
     function addEdge(graph, v1, v2) {
         if (!graph.has(v1)) graph.set(v1, []);
@@ -45,7 +44,7 @@
     /**
      * Returns all paths between start and end with at most 8 degrees of separation
      * (16 edges, since each degree = actor→movie→actor = 2 edges).
-     * Results are returned in BFS order (shortest paths first) and capped at MAX_RESULTS.
+     * Results are returned in BFS order (shortest paths first).
      */
     function getBFSMax8Paths(graph, start, end) {
         if (!graph.has(start) || !graph.has(end)) return [];
@@ -56,7 +55,7 @@
         // Using a per-path visited set avoids cycles while allowing all distinct routes
         const queue = [[[start], new Set([start])]];
 
-        while (queue.length > 0 && validPaths.length < MAX_RESULTS) {
+        while (queue.length > 0) {
             const [path, visited] = queue.shift();
             const node = path[path.length - 1];
             const currentEdges = path.length - 1;
@@ -68,7 +67,6 @@
 
                 if (neighbor === end) {
                     validPaths.push([...path, neighbor]);
-                    if (validPaths.length >= MAX_RESULTS) break;
                 } else {
                     const newVisited = new Set(visited);
                     newVisited.add(neighbor);
@@ -83,7 +81,6 @@
     return {
         MAX_DEGREES: MAX_DEGREES,
         MAX_EDGES: MAX_EDGES,
-        MAX_RESULTS: MAX_RESULTS,
         addEdge: addEdge,
         getBFSShortestPath: getBFSShortestPath,
         getBFSMax8Paths: getBFSMax8Paths,
