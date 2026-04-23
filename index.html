@@ -182,6 +182,60 @@ const graph = new Map();
 const actorsSet = new Set();
 let sortedActorsList = [];
 
+// Web Worker handles all BFS computation to keep the UI thread free.
+const worker = new Worker('./bfs.worker.js');
+
+worker.onmessage = function (e) {
+    const msg = e.data;
+
+    if (msg.type === 'ready') {
+        document.getElementById('statusMessage').style.display = 'none';
+        document.getElementById('actorOrigin').disabled = false;
+        document.getElementById('actorDest').disabled = false;
+        document.getElementById('btnBfs').disabled = false;
+        document.getElementById('btnBfs8').disabled = false;
+        renderResults('Dados carregados com sucesso. Selecione os atores e execute a busca.');
+        return;
+    }
+
+    if (msg.type === 'bfs_shortest_result') {
+        setButtonsEnabled(true);
+        if (msg.path) {
+            renderResults(formatPathHTML(msg.path));
+        } else {
+            renderResults('<span class="error">Relacionamento inexistente entre os atores selecionados.</span>');
+        }
+        return;
+    }
+
+    if (msg.type === 'bfs_all8_result') {
+        setButtonsEnabled(true);
+        if (msg.paths.length > 0) {
+            let html = `<h3>Caminhos encontrados (Máx ${BFS.MAX_DEGREES} Graus): ${msg.paths.length}</h3>`;
+            const fragment = document.createDocumentFragment();
+            const wrapper = document.createElement('div');
+            wrapper.innerHTML = html;
+            msg.paths.forEach(p => {
+                wrapper.innerHTML += formatPathHTML(p);
+            });
+            renderResults(wrapper.innerHTML);
+        } else {
+            renderResults('<span class="error">Relacionamento inexistente ou excede o limite de 8 arestas.</span>');
+        }
+        return;
+    }
+};
+
+worker.onerror = function (e) {
+    setButtonsEnabled(true);
+    renderResults('<span class="error">Erro no processador de busca: ' + e.message + '</span>');
+};
+
+function setButtonsEnabled(enabled) {
+    document.getElementById('btnBfs').disabled = !enabled;
+    document.getElementById('btnBfs8').disabled = !enabled;
+}
+
 function seedGraph(data) {
     data.forEach(movie => {
         const movieTitle = movie.title;
@@ -205,13 +259,11 @@ async function loadData() {
         
         setupAutocomplete('actorOrigin', 'listOrigin');
         setupAutocomplete('actorDest', 'listDest');
-        
-        document.getElementById('statusMessage').style.display = 'none';
-        document.getElementById('actorOrigin').disabled = false;
-        document.getElementById('actorDest').disabled = false;
-        document.getElementById('btnBfs').disabled = false;
-        document.getElementById('btnBfs8').disabled = false;
-        renderResults('Dados carregados com sucesso. Selecione os atores e execute a busca.');
+
+        // Send the graph to the worker once. The worker signals 'ready' when set up,
+        // at which point the search buttons are enabled.
+        document.getElementById('statusMessage').textContent = 'Configurando buscador...';
+        worker.postMessage({ type: 'init', graphEntries: [...graph.entries()] });
         
     } catch (error) {
         document.getElementById('statusMessage').style.display = 'none';
@@ -291,13 +343,9 @@ function executeBFS() {
         return;
     }
 
-    const path = BFS.getBFSShortestPath(graph, origin, dest);
-
-    if (path) {
-        renderResults(formatPathHTML(path));
-    } else {
-        renderResults('<span class="error">Relacionamento inexistente entre os atores selecionados.</span>');
-    }
+    setButtonsEnabled(false);
+    renderResults('<p class="loading">Processando busca...</p>');
+    worker.postMessage({ type: 'bfs_shortest', start: origin, end: dest });
 }
 
 function executeBFS8() {
@@ -309,17 +357,9 @@ function executeBFS8() {
         return;
     }
 
-    const paths = BFS.getBFSMax8Paths(graph, origin, dest);
-
-    if (paths.length > 0) {
-        let html = `<h3>Caminhos encontrados (Máx ${BFS.MAX_DEGREES} Graus): ${paths.length}</h3>`;
-        paths.forEach(p => {
-            html += formatPathHTML(p);
-        });
-        renderResults(html);
-    } else {
-        renderResults('<span class="error">Relacionamento inexistente ou excede o limite de 8 arestas.</span>');
-    }
+    setButtonsEnabled(false);
+    renderResults('<p class="loading">Processando busca...</p>');
+    worker.postMessage({ type: 'bfs_all8', start: origin, end: dest });
 }
 
 window.onload = loadData;
