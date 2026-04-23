@@ -20,21 +20,27 @@
         if (!graph.has(start) || !graph.has(end)) return null;
         if (start === end) return [start];
 
-        const queue = [[start]];
-        const visited = new Set();
-        visited.add(start);
+        // Parent-map BFS: no path copying per queue entry (O(V+E) time and space).
+        const parent = new Map([[start, null]]);
+        const queue = [start];
+        let head = 0;
 
-        while (queue.length > 0) {
-            const path = queue.shift();
-            const node = path[path.length - 1];
-
+        while (head < queue.length) {
+            const node = queue[head++];
             for (const neighbor of graph.get(node)) {
                 if (neighbor === end) {
-                    return [...path, neighbor];
+                    // Reconstruct path from parent pointers
+                    const path = [end, node];
+                    let cur = node;
+                    while (parent.get(cur) !== null) {
+                        cur = parent.get(cur);
+                        path.push(cur);
+                    }
+                    return path.reverse();
                 }
-                if (!visited.has(neighbor)) {
-                    visited.add(neighbor);
-                    queue.push([...path, neighbor]);
+                if (!parent.has(neighbor)) {
+                    parent.set(neighbor, node);
+                    queue.push(neighbor);
                 }
             }
         }
@@ -45,32 +51,86 @@
      * Returns all paths between start and end with at most 8 degrees of separation
      * (16 edges, since each degree = actor→movie→actor = 2 edges).
      * Results are returned in BFS order (shortest paths first).
+     *
+     * Optimisations over a naïve BFS:
+     *  - Pre-computed distToEnd (reverse BFS from `end`): prunes any branch whose
+     *    remaining edge budget can no longer reach `end`, eliminating huge subtrees
+     *    early without sacrificing completeness.
+     *  - Parent-pointer queue entries {node, parentIdx, depth}: no Set or path-array
+     *    is cloned per queue entry; each entry is a tiny constant-size object.
+     *  - Head-index queue: avoids the O(n) cost of Array.shift().
+     *  - Ancestor set built by walking the O(depth ≤ 16) parent chain once per
+     *    expanded node for cycle prevention.
      */
     function getBFSMax8Paths(graph, start, end) {
         if (!graph.has(start) || !graph.has(end)) return [];
         if (start === end) return [[start]];
 
+        // --- Reverse BFS: minimum edges from every reachable node to `end` ---
+        const distToEnd = new Map([[end, 0]]);
+        {
+            const q = [end];
+            let h = 0;
+            while (h < q.length) {
+                const node = q[h++];
+                const d = distToEnd.get(node);
+                for (const nb of (graph.get(node) || [])) {
+                    if (!distToEnd.has(nb)) {
+                        distToEnd.set(nb, d + 1);
+                        q.push(nb);
+                    }
+                }
+            }
+        }
+
+        // Early exit if start can't reach end within the edge budget
+        if (!distToEnd.has(start) || distToEnd.get(start) > MAX_EDGES) return [];
+
         const validPaths = [];
-        // Each queue entry: [path, visitedInPath]
-        // Using a per-path visited set avoids cycles while allowing all distinct routes
-        const queue = [[[start], new Set([start])]];
+        // Queue of { node, parentIdx, depth }
+        // parentIdx is the index into `queue` of the parent entry (-1 for root).
+        const queue = [{ node: start, parentIdx: -1, depth: 0 }];
+        let head = 0;
 
-        while (queue.length > 0) {
-            const [path, visited] = queue.shift();
-            const node = path[path.length - 1];
-            const currentEdges = path.length - 1;
+        while (head < queue.length) {
+            const entry = queue[head];
+            const { node, depth } = entry;
+            const idx = head++;
 
-            if (currentEdges >= MAX_EDGES) continue;
+            const remaining = MAX_EDGES - depth;
+            if (remaining <= 0) continue;
+
+            // Build the ancestor set for this path by walking parent pointers.
+            // Cost is O(depth) ≤ O(MAX_EDGES) — cycle prevention without cloning.
+            const ancestors = new Set();
+            let cur = entry;
+            while (cur.parentIdx !== -1) {
+                ancestors.add(cur.node);
+                cur = queue[cur.parentIdx];
+            }
+            ancestors.add(start);
 
             for (const neighbor of (graph.get(node) || [])) {
-                if (visited.has(neighbor)) continue;
+                if (ancestors.has(neighbor)) continue;
 
                 if (neighbor === end) {
-                    validPaths.push([...path, neighbor]);
+                    // Reconstruct the full path from parent pointers
+                    const path = [neighbor];
+                    let c = entry;
+                    while (c.parentIdx !== -1) {
+                        path.push(c.node);
+                        c = queue[c.parentIdx];
+                    }
+                    path.push(start);
+                    path.reverse();
+                    validPaths.push(path);
                 } else {
-                    const newVisited = new Set(visited);
-                    newVisited.add(neighbor);
-                    queue.push([[...path, neighbor], newVisited]);
+                    const d = distToEnd.get(neighbor);
+                    // Prune: only explore if `neighbor` can still reach `end`
+                    // within the remaining budget (1 edge is consumed to reach neighbor).
+                    if (d !== undefined && d <= remaining - 1) {
+                        queue.push({ node: neighbor, parentIdx: idx, depth: depth + 1 });
+                    }
                 }
             }
         }
