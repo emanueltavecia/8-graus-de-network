@@ -32,47 +32,102 @@ function renderResults(htmlContent) {
 function setupAutocomplete(inputId, listId) {
   const input = document.getElementById(inputId)
   const list = document.getElementById(listId)
+  let currentMatches = []
+  let activeIndex = -1
+
+  function setActiveIndex(nextIndex) {
+    if (currentMatches.length === 0) {
+      activeIndex = -1
+      return
+    }
+
+    const normalizedIndex =
+      ((nextIndex % currentMatches.length) + currentMatches.length) %
+      currentMatches.length
+    activeIndex = normalizedIndex
+
+    const items = list.querySelectorAll('.autocomplete-item')
+    items.forEach((item, index) => {
+      item.classList.toggle('active', index === activeIndex)
+      if (index === activeIndex) {
+        item.scrollIntoView({ block: 'nearest' })
+      }
+    })
+  }
+
+  function selectMatch(match) {
+    input.value = match
+    currentMatches = []
+    activeIndex = -1
+    list.innerHTML = ''
+    list.classList.remove('show')
+  }
 
   function renderList(showAllOnEmpty = false) {
     const val = input.value.trim().toLowerCase()
     list.innerHTML = ''
+    currentMatches = []
+    activeIndex = -1
 
     if (!val && !showAllOnEmpty) {
       list.classList.remove('show')
       return
     }
 
-    const matches = (
+    currentMatches = (
       val
         ? sortedActorsList.filter((actor) => actor.toLowerCase().includes(val))
         : sortedActorsList
     ).slice(0, AUTOCOMPLETE_LIMIT)
 
-    if (matches.length === 0) {
+    if (currentMatches.length === 0) {
       list.classList.remove('show')
       return
     }
 
     const fragment = document.createDocumentFragment()
-    matches.forEach((match) => {
+    currentMatches.forEach((match, index) => {
       const li = document.createElement('li')
       li.className = 'autocomplete-item'
       li.textContent = match
       li.addEventListener('click', (event) => {
         event.stopPropagation()
-        input.value = match
-        list.innerHTML = ''
-        list.classList.remove('show')
+        selectMatch(match)
       })
       fragment.appendChild(li)
     })
 
     list.appendChild(fragment)
     list.classList.add('show')
+    setActiveIndex(0)
+  }
+
+  function handleKeydown(event) {
+    if (!list.classList.contains('show') || currentMatches.length === 0) return
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      setActiveIndex(activeIndex + 1)
+      return
+    }
+
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      setActiveIndex(activeIndex - 1)
+      return
+    }
+
+    if (event.key === 'Enter') {
+      if (activeIndex >= 0 && activeIndex < currentMatches.length) {
+        event.preventDefault()
+        selectMatch(currentMatches[activeIndex])
+      }
+    }
   }
 
   input.addEventListener('input', () => renderList(false))
   input.addEventListener('focus', () => renderList(true))
+  input.addEventListener('keydown', handleKeydown)
 }
 
 function closeAutocompleteLists(event) {
