@@ -133,27 +133,6 @@ export function getAllPathsUpToDegrees(graph, startName, endName, maxDegrees = 8
   return paths.sort((a, b) => a.length - b.length);
 }
 
-function computeDistancesFromTarget(graph, targetId, maxEdges) {
-  const queue = [targetId];
-  const distances = new Map([[targetId, 0]]);
-
-  let head = 0;
-  while (head < queue.length) {
-    const node = queue[head++];
-    const dist = distances.get(node);
-
-    if (dist >= maxEdges) continue;
-
-    for (const neighbor of graph.adjacencyList.get(node) || []) {
-      if (!distances.has(neighbor)) {
-        distances.set(neighbor, dist + 1);
-        queue.push(neighbor);
-      }
-    }
-  }
-  return distances;
-}
-
 export async function streamAllPathsUpToDegrees(
   graph,
   startName,
