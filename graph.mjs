@@ -131,7 +131,7 @@ export async function streamAllPathsUpToDegrees(
   const endId = normalizeActorId(endName);
   const maxEdges = maxDegrees;
 
-  const { onPath, onProgress, signal, stepBudget = 5000 } = options;
+  const { onPath, onProgress, signal, stepBudget } = options;
 
   if (!graph.adjacencyList.has(startId) || !graph.adjacencyList.has(endId))
     return { count: 0, cancelled: false };
