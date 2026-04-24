@@ -70,64 +70,76 @@ function reconstructPath(previous, start, end) {
   return path
 }
 
+function computeDistancesFromTarget(graph, target, maxEdges) {
+  const queue = [target]
+  let head = 0
+  const distances = new Map([[target, 0]])
+
+  while (head < queue.length) {
+    const node = queue[head++]
+    const dist = distances.get(node)
+
+    if (dist >= maxEdges) continue
+
+    for (const neighbor of graph.get(node) || []) {
+      if (distances.has(neighbor)) continue
+      distances.set(neighbor, dist + 1)
+      queue.push(neighbor)
+    }
+  }
+
+  return distances
+}
+
 export function getAllPathsUpToDegrees(graph, start, end, maxDegrees = 8) {
   if (!graph.has(start) || !graph.has(end)) return []
   if (start === end) return [[start]]
 
-  const queue = [start]
-  const distances = new Map([[start, 0]])
-  const predecessors = new Map([[start, []]])
-  let shortestDistance = -1
+  const distanceToEnd = computeDistancesFromTarget(graph, end, maxDegrees)
+  if (!distanceToEnd.has(start)) return []
 
-  while (queue.length > 0) {
-    const current = queue.shift()
-    const currentDist = distances.get(current)
+  const queue = [[start]]
+  let head = 0
+  const results = []
 
-    if (shortestDistance !== -1 && currentDist >= shortestDistance) {
+  while (head < queue.length) {
+    const currentPath = queue[head++]
+    const currentNode = currentPath[currentPath.length - 1]
+    const depth = currentPath.length - 1
+
+    if (currentNode === end) {
+      results.push(currentPath)
       continue
     }
 
-    if (currentDist >= maxDegrees) continue
+    if (depth >= maxDegrees) continue
 
-    for (const neighbor of graph.get(current) || []) {
-      if (!distances.has(neighbor)) {
-        distances.set(neighbor, currentDist + 1)
-        predecessors.set(neighbor, [current])
-        queue.push(neighbor)
+    for (const neighbor of graph.get(currentNode) || []) {
+      if (currentPath.includes(neighbor)) continue
 
-        if (neighbor === end) {
-          shortestDistance = currentDist + 1
-        }
-      } else if (distances.get(neighbor) === currentDist + 1) {
-        predecessors.get(neighbor).push(current)
-      }
+      const minToEnd = distanceToEnd.get(neighbor)
+      if (minToEnd === undefined) continue
+
+      if (depth + 1 + minToEnd > maxDegrees) continue
+
+      queue.push([...currentPath, neighbor])
     }
   }
 
-  if (shortestDistance === -1 || shortestDistance > maxDegrees) {
-    return []
-  }
-
-  const results = []
-  function backtrack(node, currentPath) {
-    if (node === start) {
-      results.push([start, ...currentPath])
-      return
-    }
-    const preds = predecessors.get(node) || []
-    for (const p of preds) {
-      backtrack(p, [node, ...currentPath])
-    }
-  }
-
-  backtrack(end, [end])
   return results
 }
 
-export async function streamAllPathsUpToDegrees(graph, start, end, maxDegrees = 8, options = {}) {
-  const { onPath, onProgress, signal, stepBudget = 25000 } = options
+export async function streamAllPathsUpToDegrees(
+  graph,
+  start,
+  end,
+  maxDegrees = 8,
+  options = {},
+) {
+  if (!graph.has(start) || !graph.has(end))
+    return { count: 0, cancelled: false }
 
-  if (!graph.has(start) || !graph.has(end)) return { count: 0, cancelled: false }
+  const { onPath, onProgress, signal, stepBudget = 25000 } = options
 
   if (start === end) {
     if (typeof onPath === 'function') onPath([start])
@@ -135,73 +147,52 @@ export async function streamAllPathsUpToDegrees(graph, start, end, maxDegrees = 
     return { count: 1, cancelled: false }
   }
 
-  const queue = [start]
+  const distanceToEnd = computeDistancesFromTarget(graph, end, maxDegrees)
+  if (!distanceToEnd.has(start)) return { count: 0, cancelled: false }
+
+  const queue = [[start]]
   let head = 0
-  const distances = new Map([[start, 0]])
-  const predecessors = new Map([[start, []]])
-  let shortestDistance = -1
+
+  let count = 0
   let steps = 0
 
   while (head < queue.length) {
-    if (signal?.cancelled) return { count: 0, cancelled: true }
-
-    const current = queue[head++]
-    const currentDist = distances.get(current)
-
-    if (shortestDistance !== -1 && currentDist >= shortestDistance) continue
-    if (currentDist >= maxDegrees) continue
-
-    for (const neighbor of graph.get(current) || []) {
-      if (!distances.has(neighbor)) {
-        distances.set(neighbor, currentDist + 1)
-        predecessors.set(neighbor, [current])
-        queue.push(neighbor)
-
-        if (neighbor === end) {
-          shortestDistance = currentDist + 1
-        }
-      } else if (distances.get(neighbor) === currentDist + 1) {
-        predecessors.get(neighbor).push(current)
-      }
+    if (signal?.cancelled) {
+      return { count, cancelled: true }
     }
 
-    steps++
-    if (steps >= stepBudget) {
-      steps = 0
-      if (typeof onProgress === 'function') onProgress(0)
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    }
-  }
+    const currentPath = queue[head++]
+    const currentNode = currentPath[currentPath.length - 1]
+    const depth = currentPath.length - 1
 
-  if (shortestDistance === -1 || shortestDistance > maxDegrees) {
-    if (typeof onProgress === 'function') onProgress(0)
-    return { count: 0, cancelled: false }
-  }
-
-  let count = 0
-  const stack = [{ node: end, path: [end] }]
-  steps = 0
-
-  while (stack.length > 0) {
-    if (signal?.cancelled) return { count, cancelled: true }
-
-    const { node, path } = stack.pop()
-
-    if (node === start) {
-      count++
-      const finalPath = [...path].reverse()
-      if (typeof onPath === 'function') onPath(finalPath)
-    } else {
-      const preds = predecessors.get(node) || []
-      for (const p of preds) {
-        stack.push({ node: p, path: [...path, p] })
-      }
+    if (currentNode === end) {
+      count += 1
+      if (typeof onPath === 'function') onPath(currentPath)
+      continue
     }
 
-    steps++
+    if (depth >= maxDegrees) continue
+
+    for (const neighbor of graph.get(currentNode) || []) {
+      if (currentPath.includes(neighbor)) continue
+
+      const minToEnd = distanceToEnd.get(neighbor)
+      if (minToEnd === undefined) continue
+      if (depth + 1 + minToEnd > maxDegrees) continue
+
+      queue.push([...currentPath, neighbor])
+    }
+
+    steps += 1
     if (steps >= stepBudget) {
       steps = 0
       if (typeof onProgress === 'function') onProgress(count)
+
+      if (head > 50000) {
+        queue.splice(0, head)
+        head = 0
+      }
+
       await new Promise((resolve) => setTimeout(resolve, 0))
     }
   }
