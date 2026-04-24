@@ -1,5 +1,4 @@
 export function createGraph() {
-  // Mantemos um Map para adjacências e outro para metadados (opcional, mas recomendado)
   return {
     adjacencyList: new Map(),
     vertices: new Map() 
@@ -29,7 +28,6 @@ export function buildGraphFromMovies(data) {
       const actorId = normalizeActorId(actor);
       graph.vertices.set(actorId, { name: actor, type: 'actor' });
       
-      // Conexão: Ator <-> Filme (e não Ator <-> Ator diretamente)
       addEdge(graph, actorId, movieId);
       actorsSet.add(actor);
     });
@@ -84,15 +82,10 @@ function reconstructPath(previous, start, end) {
   return path.reverse();
 }
 
-/**
- * Nota: Como o grafo é bipartido (Ator-Filme-Ator), 
- * a "distância" em graus de separação de Hollywood é (edges / 2).
- * Se maxDegrees = 8, permitimos até 16 arestas no grafo técnico.
- */
 export function getAllPathsUpToDegrees(graph, startName, endName, maxDegrees = 8) {
   const startId = normalizeActorId(startName);
   const endId = normalizeActorId(endName);
-  const maxEdges = maxDegrees * 2; 
+  const maxEdges = maxDegrees; 
 
   if (!graph.adjacencyList.has(startId) || !graph.adjacencyList.has(endId)) return [];
   
@@ -116,7 +109,6 @@ export function getAllPathsUpToDegrees(graph, startName, endName, maxDegrees = 8
       const newPath = [...currentPath, neighborId];
 
       if (neighborId === endId) {
-        // Formata para retornar nomes amigáveis
         paths.push(newPath.map(id => graph.vertices.get(id).name));
         continue;
       }
@@ -137,7 +129,7 @@ export async function streamAllPathsUpToDegrees(
 ) {
   const startId = normalizeActorId(startName);
   const endId = normalizeActorId(endName);
-  const maxEdges = maxDegrees * 2;
+  const maxEdges = maxDegrees;
 
   const { onPath, onProgress, signal, stepBudget = 5000 } = options;
 
