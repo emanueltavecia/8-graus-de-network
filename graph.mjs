@@ -70,6 +70,7 @@ function reconstructPath(previous, start, end) {
   return path
 }
 
+// Otimização: calcula a distância mínima a partir do destino para podar caminhos ruins no BFS
 function computeDistancesFromTarget(graph, target, maxEdges) {
   const queue = [target]
   let head = 0
@@ -98,11 +99,10 @@ export function getAllPathsUpToDegrees(graph, start, end, maxDegrees = 8) {
   const distanceToEnd = computeDistancesFromTarget(graph, end, maxDegrees)
   if (!distanceToEnd.has(start)) return []
 
+  // Adaptação do BFS: A fila agora carrega o caminho completo (garante a exploração em largura)
   const queue = [[start]]
   let head = 0
   const results = []
-  
-  const uniqueActorPaths = new Set()
 
   while (head < queue.length) {
     const currentPath = queue[head++]
@@ -110,24 +110,23 @@ export function getAllPathsUpToDegrees(graph, start, end, maxDegrees = 8) {
     const depth = currentPath.length - 1
 
     if (currentNode === end) {
-      const actorSequence = currentPath.filter((_, i) => i % 2 === 0).join('|')
-      
-      if (!uniqueActorPaths.has(actorSequence)) {
-        uniqueActorPaths.add(actorSequence)
-        results.push(currentPath)
-      }
+      results.push(currentPath)
       continue
     }
 
     if (depth >= maxDegrees) continue
 
     for (const neighbor of graph.get(currentNode) || []) {
+      // Impede ciclos estruturais (não permite que o caminho volte para um vértice que já está nele)
       if (currentPath.includes(neighbor)) continue
 
       const minToEnd = distanceToEnd.get(neighbor)
       if (minToEnd === undefined) continue
+
+      // Poda/Pruning (A*): Se o caminho atual não tem como chegar ao fim dentro do limite de arestas, descarta
       if (depth + 1 + minToEnd > maxDegrees) continue
 
+      // Cria um novo caminho com o vizinho e empurra para o fim da fila (BFS puro)
       queue.push([...currentPath, neighbor])
     }
   }
@@ -161,7 +160,6 @@ export async function streamAllPathsUpToDegrees(
 
   let count = 0
   let steps = 0
-  const uniqueActorPaths = new Set()
 
   while (head < queue.length) {
     if (signal?.cancelled) {
@@ -173,13 +171,8 @@ export async function streamAllPathsUpToDegrees(
     const depth = currentPath.length - 1
 
     if (currentNode === end) {
-      const actorSequence = currentPath.filter((_, i) => i % 2 === 0).join('|')
-
-      if (!uniqueActorPaths.has(actorSequence)) {
-        uniqueActorPaths.add(actorSequence)
-        count += 1
-        if (typeof onPath === 'function') onPath(currentPath)
-      }
+      count += 1
+      if (typeof onPath === 'function') onPath(currentPath)
       continue
     }
 
@@ -200,6 +193,7 @@ export async function streamAllPathsUpToDegrees(
       steps = 0
       if (typeof onProgress === 'function') onProgress(count)
 
+      // Evita o vazamento de memória da Engine do JS na array "queue" ao longo do tempo (Shift manual)
       if (head > 50000) {
         queue.splice(0, head)
         head = 0
