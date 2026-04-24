@@ -1,113 +1,36 @@
-// Função auxiliar para manter consistência com o seedGraph.js
-function normalizeActorId(actorName) {
-  return actorName.trim().toLowerCase().replace(/\s+/g, '_');
-}
-
-export function createGraph() {
-  // Mantemos um Map para adjacências e outro para metadados (opcional, mas recomendado)
-  return {
-    adjacencyList: new Map(),
-    vertices: new Map() 
-  };
-}
-
-export function addEdge(graph, v1Id, v2Id) {
-  if (!graph.adjacencyList.has(v1Id)) graph.adjacencyList.set(v1Id, new Set());
-  if (!graph.adjacencyList.has(v2Id)) graph.adjacencyList.set(v2Id, new Set());
-
-  graph.adjacencyList.get(v1Id).add(v2Id);
-  graph.adjacencyList.get(v2Id).add(v1Id);
-}
-
-export function buildGraphFromMovies(data) {
-  const graph = createGraph();
-  const actorsSet = new Set();
-
-  data.forEach((movie) => {
-    const movieTitle = movie?.title;
-    if (!movieTitle || !Array.isArray(movie.cast)) return;
-
-    const movieId = `movie_${movie.id}`;
-    graph.vertices.set(movieId, { name: movieTitle, type: 'movie' });
-
-    movie.cast.forEach((actor) => {
-      const actorId = normalizeActorId(actor);
-      graph.vertices.set(actorId, { name: actor, type: 'actor' });
-      
-      // Conexão: Ator <-> Filme (e não Ator <-> Ator diretamente)
-      addEdge(graph, actorId, movieId);
-      actorsSet.add(actor);
-    });
-  });
-
-  const actors = Array.from(actorsSet).sort((a, b) =>
-    a.localeCompare(b, 'pt-BR')
-  );
-  
-  return { graph, actors };
-}
-
-export function getBFSShortestPath(graph, startName, endName) {
+export async function streamAllPathsUpToDegrees(
+  graph,
+  startName,
+  endName,
+  maxDegrees = 8,
+  options = {}
+) {
   const startId = normalizeActorId(startName);
   const endId = normalizeActorId(endName);
+  const maxEdges = maxDegrees * 2;
 
-  if (!graph.adjacencyList.has(startId) || !graph.adjacencyList.has(endId)) return null;
-  if (startId === endId) return [startName];
+  const { onPath, onProgress, signal, stepBudget = 5000 } = options;
 
-  const queue = [startId];
-  const visited = new Set([startId]);
-  const previous = new Map();
+  if (!graph.adjacencyList.has(startId) || !graph.adjacencyList.has(endId))
+    return { count: 0, cancelled: false };
 
-  while (queue.length > 0) {
-    const node = queue.shift();
-
-    for (const neighbor of graph.adjacencyList.get(node)) {
-      if (visited.has(neighbor)) continue;
-
-      visited.add(neighbor);
-      previous.set(neighbor, node);
-
-      if (neighbor === endId) {
-        return reconstructPath(previous, startId, endId).map(id => 
-          graph.vertices.get(id).name
-        );
-      }
-      queue.push(neighbor);
-    }
+  if (startId === endId) {
+    if (typeof onPath === 'function') onPath([startName]);
+    return { count: 1, cancelled: false };
   }
 
-  return null;
-}
-
-function reconstructPath(previous, start, end) {
-  const path = [end];
-  let current = end;
-  while (current !== start) {
-    current = previous.get(current);
-    path.push(current);
-  }
-  return path.reverse();
-}
-
-/**
- * Nota: Como o grafo é bipartido (Ator-Filme-Ator), 
- * a "distância" em graus de separação de Hollywood é (edges / 2).
- * Se maxDegrees = 8, permitimos até 16 arestas no grafo técnico.
- */
-export function getAllPathsUpToDegrees(graph, startName, endName, maxDegrees = 8) {
-  const startId = normalizeActorId(startName);
-  const endId = normalizeActorId(endName);
-  const maxEdges = maxDegrees * 2; 
-
-  if (!graph.adjacencyList.has(startId) || !graph.adjacencyList.has(endId)) return [];
-  
   const distanceToEnd = computeDistancesFromTarget(graph, endId, maxEdges);
-  if (!distanceToEnd.has(startId)) return [];
+  if (!distanceToEnd.has(startId)) return { count: 0, cancelled: false };
 
-  const paths = [];
   const stack = [[startId]];
+  let count = 0;
+  let steps = 0;
 
   while (stack.length > 0) {
+    if (signal?.cancelled) {
+      return { count, cancelled: true };
+    }
+
     const currentPath = stack.pop();
     const currentId = currentPath[currentPath.length - 1];
     const edgeCount = currentPath.length - 1;
@@ -116,32 +39,42 @@ export function getAllPathsUpToDegrees(graph, startName, endName, maxDegrees = 8
       if (currentPath.includes(neighborId)) continue;
 
       const minToEnd = distanceToEnd.get(neighborId);
+      
       if (minToEnd === undefined || edgeCount + 1 + minToEnd > maxEdges) continue;
 
       const newPath = [...currentPath, neighborId];
 
       if (neighborId === endId) {
-        // Formata para retornar nomes amigáveis
-        paths.push(newPath.map(id => graph.vertices.get(id).name));
+        count += 1;
+        if (typeof onPath === 'function') {
+          onPath(newPath.map(id => graph.vertices.get(id).name));
+        }
         continue;
       }
 
       stack.push(newPath);
     }
+
+    steps += 1;
+    if (steps >= stepBudget) {
+      steps = 0;
+      if (typeof onProgress === 'function') onProgress(count);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
   }
 
-  return paths.sort((a, b) => a.length - b.length);
+  if (typeof onProgress === 'function') onProgress(count);
+  return { count, cancelled: false };
 }
 
 function computeDistancesFromTarget(graph, targetId, maxEdges) {
   const queue = [targetId];
   const distances = new Map([[targetId, 0]]);
-
   let head = 0;
+
   while (head < queue.length) {
     const node = queue[head++];
     const dist = distances.get(node);
-
     if (dist >= maxEdges) continue;
 
     for (const neighbor of graph.adjacencyList.get(node) || []) {
@@ -152,4 +85,8 @@ function computeDistancesFromTarget(graph, targetId, maxEdges) {
     }
   }
   return distances;
+}
+
+function normalizeActorId(name) {
+  return name.trim().toLowerCase().replace(/\s+/g, '_');
 }
