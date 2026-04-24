@@ -1,8 +1,3 @@
-// Função auxiliar para manter consistência com o seedGraph.js
-function normalizeActorId(actorName) {
-  return actorName.trim().toLowerCase().replace(/\s+/g, '_');
-}
-
 export function createGraph() {
   // Mantemos um Map para adjacências e outro para metadados (opcional, mas recomendado)
   return {
