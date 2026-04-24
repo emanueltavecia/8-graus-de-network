@@ -70,7 +70,6 @@ function reconstructPath(previous, start, end) {
   return path
 }
 
-// Otimização: calcula a distância mínima a partir do destino para podar caminhos ruins no BFS
 function computeDistancesFromTarget(graph, target, maxEdges) {
   const queue = [target]
   let head = 0
@@ -99,39 +98,38 @@ export function getAllPathsUpToDegrees(graph, start, end, maxDegrees = 8) {
   const distanceToEnd = computeDistancesFromTarget(graph, end, maxDegrees)
   if (!distanceToEnd.has(start)) return []
 
-  // Adaptação do BFS: A fila agora carrega o caminho completo (garante a exploração em largura)
-  const queue = [[start]]
-  let head = 0
-  const results = []
+  const paths = []
+  
+  const stack = [[start]]
 
-  while (head < queue.length) {
-    const currentPath = queue[head++]
-    const currentNode = currentPath[currentPath.length - 1]
-    const depth = currentPath.length - 1
+  while (stack.length > 0) {
+    const currentPath = stack.pop()
+    const currentId = currentPath[currentPath.length - 1]
+    const edgeCount = currentPath.length - 1
 
-    if (currentNode === end) {
-      results.push(currentPath)
-      continue
-    }
+    if (edgeCount >= maxDegrees) continue
 
-    if (depth >= maxDegrees) continue
+    for (const neighborId of graph.get(currentId) || []) {
+      if (currentPath.includes(neighborId)) continue
 
-    for (const neighbor of graph.get(currentNode) || []) {
-      // Impede ciclos estruturais (não permite que o caminho volte para um vértice que já está nele)
-      if (currentPath.includes(neighbor)) continue
-
-      const minToEnd = distanceToEnd.get(neighbor)
+      const minToEnd = distanceToEnd.get(neighborId)
       if (minToEnd === undefined) continue
+      if (edgeCount + 1 + minToEnd > maxDegrees) continue
 
-      // Poda/Pruning (A*): Se o caminho atual não tem como chegar ao fim dentro do limite de arestas, descarta
-      if (depth + 1 + minToEnd > maxDegrees) continue
+      const newPath = [...currentPath, neighborId]
 
-      // Cria um novo caminho com o vizinho e empurra para o fim da fila (BFS puro)
-      queue.push([...currentPath, neighbor])
+      if (neighborId === end) {
+        paths.push(newPath)
+        continue
+      }
+
+      if (newPath.length - 1 < maxDegrees) {
+        stack.push(newPath)
+      }
     }
   }
 
-  return results
+  return paths.sort((a, b) => a.length - b.length)
 }
 
 export async function streamAllPathsUpToDegrees(
@@ -155,50 +153,46 @@ export async function streamAllPathsUpToDegrees(
   const distanceToEnd = computeDistancesFromTarget(graph, end, maxDegrees)
   if (!distanceToEnd.has(start)) return { count: 0, cancelled: false }
 
-  const queue = [[start]]
-  let head = 0
+  const stack = [[start]]
 
   let count = 0
   let steps = 0
 
-  while (head < queue.length) {
+  while (stack.length > 0) {
     if (signal?.cancelled) {
       return { count, cancelled: true }
     }
 
-    const currentPath = queue[head++]
-    const currentNode = currentPath[currentPath.length - 1]
-    const depth = currentPath.length - 1
+    const currentPath = stack.pop()
+    const currentId = currentPath[currentPath.length - 1]
+    const edgeCount = currentPath.length - 1
 
-    if (currentNode === end) {
-      count += 1
-      if (typeof onPath === 'function') onPath(currentPath)
-      continue
-    }
+    if (edgeCount >= maxDegrees) continue
 
-    if (depth >= maxDegrees) continue
+    for (const neighborId of graph.get(currentId) || []) {
+      if (currentPath.includes(neighborId)) continue
 
-    for (const neighbor of graph.get(currentNode) || []) {
-      if (currentPath.includes(neighbor)) continue
-
-      const minToEnd = distanceToEnd.get(neighbor)
+      const minToEnd = distanceToEnd.get(neighborId)
       if (minToEnd === undefined) continue
-      if (depth + 1 + minToEnd > maxDegrees) continue
+      if (edgeCount + 1 + minToEnd > maxDegrees) continue
 
-      queue.push([...currentPath, neighbor])
+      const newPath = [...currentPath, neighborId]
+
+      if (neighborId === end) {
+        count += 1
+        if (typeof onPath === 'function') onPath(newPath)
+        continue
+      }
+
+      if (newPath.length - 1 < maxDegrees) {
+        stack.push(newPath)
+      }
     }
 
     steps += 1
     if (steps >= stepBudget) {
       steps = 0
       if (typeof onProgress === 'function') onProgress(count)
-
-      // Evita o vazamento de memória da Engine do JS na array "queue" ao longo do tempo (Shift manual)
-      if (head > 50000) {
-        queue.splice(0, head)
-        head = 0
-      }
-
       await new Promise((resolve) => setTimeout(resolve, 0))
     }
   }
