@@ -63,6 +63,27 @@ function setupAutocomplete(inputId, listId) {
     list.classList.remove('show')
   }
 
+  function clearIfInvalid() {
+    const value = input.value.trim()
+
+    if (!value) {
+      list.innerHTML = ''
+      list.classList.remove('show')
+      currentMatches = []
+      activeIndex = -1
+      return
+    }
+
+    if (!sortedActorsList.includes(value)) {
+      input.value = ''
+    }
+
+    list.innerHTML = ''
+    list.classList.remove('show')
+    currentMatches = []
+    activeIndex = -1
+  }
+
   function renderList(showAllOnEmpty = false) {
     const val = input.value.trim().toLowerCase()
     list.innerHTML = ''
@@ -90,7 +111,8 @@ function setupAutocomplete(inputId, listId) {
       const li = document.createElement('li')
       li.className = 'autocomplete-item'
       li.textContent = match
-      li.addEventListener('click', (event) => {
+      li.addEventListener('mousedown', (event) => {
+        event.preventDefault()
         event.stopPropagation()
         selectMatch(match)
       })
@@ -127,6 +149,7 @@ function setupAutocomplete(inputId, listId) {
 
   input.addEventListener('input', () => renderList(false))
   input.addEventListener('focus', () => renderList(true))
+  input.addEventListener('blur', clearIfInvalid)
   input.addEventListener('keydown', handleKeydown)
 }
 
